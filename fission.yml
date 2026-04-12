@@ -1,0 +1,56 @@
+name: CF Node Fission
+on:
+  schedule:
+    # 每天北京时间 12:00 (UTC 4:00) 运行
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+
+env:
+  # === 用户自定义配置区 ===
+  TARGET_REGIONS: "SG,HK,US,JP,TW"   # 目标地区
+  PER_REGION_COUNT: "30"             # 每个地区选取的节点数量
+
+jobs:
+  fission:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: Run Fission Script
+        run: python generator.py
+        env:
+          TARGET_REGIONS: ${{ env.TARGET_REGIONS }}
+          PER_REGION_COUNT: ${{ env.PER_REGION_COUNT }}
+          VMESS_TEMPLATE: ${{ secrets.VMESS_TEMPLATE }}
+          FORCE_UPDATE: ${{ github.event_name != 'schedule' }}
+
+      - name: Commit and Push Changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git config --global core.quotepath false
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          
+          git add deip.txt
+          
+          if git diff --staged --quiet; then
+            echo "No changes in deip.txt, nothing to commit."
+          else
+            git commit -m "feat: auto fission nodes for regions ${{ env.TARGET_REGIONS }} [$(date +'%Y-%m-%d %H:%M')]"
+            git push origin ${{ github.ref_name }}
+          fi
